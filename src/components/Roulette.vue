@@ -35,13 +35,16 @@ export default {
     return {
       options: [],
       rouletteLock: false,
+      position: 0,
 
       // Apperance Param
       radius: 400,
       centerRadius: 150,
+      blinkCount: 5,
+      blinkDuration: 100, // millsec
 
       // Shuffle Param
-      totalTime: 10, // sec
+      totalTime: 5, // sec
       baseShuffleCount: 200,
       speedAlloc: [10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
       timeAlloc: [1, 1, 1, 1, 1, 1, 1, 2, 2, 3],
@@ -122,7 +125,30 @@ export default {
       }
       return optionsStyles
     },
-    shuffleParams: function() {
+  },
+  created: function() {
+    
+    if (this.count < 3) {
+      console.error('count is too small')
+      return
+    }
+    
+    for (var i = 0; i < this.count; i++) {
+      let active = this.position == i
+      let text = this.texts[i % this.texts.length]
+      this.options.push({
+        key: i,
+        active: active,
+        text: text,
+      })
+    }
+  },
+  methods: {
+    // return 0 ~ n-1
+    randomInt: function(n) {
+      return Math.floor(Math.random() * Math.floor(n));
+    },
+    createShuffle: function() {
       // Calc shuffle/duration allocation from fixed totalTime and shuffleCount
 
       let shuffleCount = this.baseShuffleCount + this.randomInt(this.count)
@@ -148,39 +174,16 @@ export default {
         'durationAlloc': durationAlloc,
       }
     },
-  },
-  created: function() {
-    
-    if (this.count < 3) {
-      console.error('count is too small')
-      return
-    }
-    
-    for (var i = 0; i < this.count; i++) {
-      let active = Math.random() < 0.5
-      let text = this.texts[i % this.texts.length]
-      this.options.push({
-        key: i,
-        active: active,
-        text: text,
-      })
-    }
-  },
-  methods: {
-    // return 0 ~ n-1
-    randomInt: function(n) {
-      return Math.floor(Math.random() * Math.floor(n));
-    },
     shuffle: function() {
-      let shuffleParams = this.shuffleParams
+      let shuffleParams = this.createShuffle()
       var shuffleRemain = shuffleParams.shuffleCount
-      var position = shuffleParams.startPosition
+      this.position = shuffleParams.startPosition
       var timer = null;
       var self = this;
       var forwardRoulette = function() {
-        self.options[position].active = false
-        position = (position + 1) % self.count
-        self.options[position].active = true
+        self.options[self.position].active = false
+        self.position = (self.position + 1) % self.count
+        self.options[self.position].active = true
       }
       var loopRoulette = function() {
         forwardRoulette()
@@ -195,7 +198,7 @@ export default {
           setTimeout(loopRoulette, duration);
         } else {
           clearTimeout(timer);
-          self.rouletteLock = false
+          self.finished()
         }
       }
       timer = setTimeout(loopRoulette, 0);
@@ -212,6 +215,26 @@ export default {
       for (const option of this.options) {
         option.active = false
       }
+    },
+    finished: function() {
+      this.blink(() => {
+        this.rouletteLock = false
+      })
+    },
+    blink: function(callback) {
+      var timer = null;
+      var self = this;
+      var countRemain = this.blinkCount * 2 // must be even number
+      var toggleActive = function() {
+        if (countRemain-- > 0) {
+          self.options[self.position].active = !self.options[self.position].active
+          setTimeout(toggleActive, self.blinkDuration);
+        } else {
+          clearTimeout(timer);
+          callback()
+        }
+      }
+      timer = setTimeout(toggleActive, 0);
     },
   }
 }
