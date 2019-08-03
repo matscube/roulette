@@ -34,8 +34,17 @@ export default {
   data: function() {
     return {
       options: [],
+      rouletteLock: false,
+
+      // Apperance Param
       radius: 400,
       centerRadius: 150,
+
+      // Shuffle Param
+      totalTime: 10, // sec
+      baseShuffleCount: 200,
+      speedAlloc: [10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
+      timeAlloc: [1, 1, 1, 1, 1, 1, 1, 2, 2, 3],
     }
   },
   computed: {
@@ -113,6 +122,32 @@ export default {
       }
       return optionsStyles
     },
+    shuffleParams: function() {
+      // Calc shuffle/duration allocation from fixed totalTime and shuffleCount
+
+      let shuffleCount = this.baseShuffleCount + this.randomInt(this.count)
+      let timeAllocSum = this.timeAlloc.reduce((sum, n) => sum += n, 0)
+      let st = this.speedAlloc.map((s, i) => s * this.timeAlloc[i])
+      let stSum = st.reduce((sum, n) => sum += n, 0)
+      let speedAlpha = timeAllocSum / this.totalTime * shuffleCount / stSum
+      let durationAlloc = this.speedAlloc.map((d) => 1 / speedAlpha / d * 1000)
+      
+      let shuffleAlloc = st.map((s) => shuffleCount / stSum * s)
+      var shuffleThreshold = []
+      shuffleAlloc.reverse().reduce(function(sum, n){
+        sum += n
+        shuffleThreshold.push(sum)
+        return sum
+      }, 0)
+      shuffleThreshold = shuffleThreshold.reverse()
+      
+      return {
+        'startPosition': this.randomInt(this.count),
+        'shuffleCount': shuffleCount,
+        'shuffleThreshold': shuffleThreshold,
+        'durationAlloc': durationAlloc,
+      }
+    },
   },
   created: function() {
     
@@ -136,25 +171,44 @@ export default {
     randomInt: function(n) {
       return Math.floor(Math.random() * Math.floor(n));
     },
-    start: function() {
-      console.log("start")
-      this.readyStart()
-      
-      let startPosition = this.randomInt(this.count)
-      let timeUnit = 30
-      var shuffleRemain = 100 + this.randomInt(50)
-      var position = startPosition
-      let refreshId = setInterval(() => {
-        this.options[position].active = false
-        position = (position + 1) % this.count
-        this.options[position].active = true
-        console.log(position)
-        if (--shuffleRemain <= 0) {
-          clearInterval(refreshId)
+    shuffle: function() {
+      let shuffleParams = this.shuffleParams
+      var shuffleRemain = shuffleParams.shuffleCount
+      var position = shuffleParams.startPosition
+      var timer = null;
+      var self = this;
+      var forwardRoulette = function() {
+        self.options[position].active = false
+        position = (position + 1) % self.count
+        self.options[position].active = true
+      }
+      var loopRoulette = function() {
+        forwardRoulette()
+        if (--shuffleRemain > 0) {
+          var duration;
+          for (var i = shuffleParams.shuffleThreshold.length - 1; i >= 0; i--) {
+            if (shuffleRemain < shuffleParams.shuffleThreshold[i]) {
+              duration = shuffleParams.durationAlloc[i]
+              break
+            }
+          }
+          setTimeout(loopRoulette, duration);
+        } else {
+          clearTimeout(timer);
+          self.rouletteLock = false
         }
-      }, timeUnit)
+      }
+      timer = setTimeout(loopRoulette, 0);
+    },
+    start: function() {
+      if (this.rouletteLock) {
+        return
+      } 
+      this.readyStart()
+      this.shuffle()
     },
     readyStart: function() {
+      this.rouletteLock = true
       for (const option of this.options) {
         option.active = false
       }
